@@ -311,7 +311,7 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle;overflow:hidden;text-ov
           <textarea id="smart-notes-input" placeholder="Write your notes here in plain language. Mention names, offices, or any details. Example: 'Talked to Fallon today about the search filters. He loves the dashboard but wants faster filtering. Also Craig called again with questions about the area search.'"></textarea>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:1.5rem">
-          <button class="btn btn-primary" onclick="analyzeNotes()" id="analyze-btn">Analyze &amp; match members →</button>
+          <button class="btn btn-primary" onclick="analyzeNotes()" id="analyze-btn">Find members in notes →</button>
           <button class="btn" onclick="document.getElementById('smart-notes-input').value=''">Clear</button>
         </div>
         <div id="suggestions-container"></div>
@@ -754,89 +754,125 @@ showView('members');
 }
 
 // ── Smart notes (AI) ──
-async function analyzeNotes(){
+function analyzeNotes(){
   const notes=document.getElementById('smart-notes-input').value.trim();
   if(!notes){toast('Please write some notes first');return;}
-  const btn=document.getElementById('analyze-btn');
-  btn.innerHTML='<span class="spinner"></span>Analyzing…';btn.disabled=true;
-  document.getElementById('suggestions-container').innerHTML='<div class="ai-thinking"><span class="spinner"></span>Matching names and extracting updates…</div>';
   document.getElementById('apply-bar').style.display='none';
+  document.getElementById('suggestions-container').innerHTML='';
+  pendingSuggestions=[];
 
-  const memberList=state.members.map(m=>`ID:${m.id}|${m.name}|${m.office||''}|${m.email||''}`).join('\n');
+  // Local name matching — no API needed
+  // Split notes into words/phrases, find members whose names appear
+  const notesLower=notes.toLowerCase();
+  const words=notesLower.split(/[\s,\.!?;:]+/).filter(w=>w.length>2);
 
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        system:`You are a CRM assistant. Given free-form notes and a member list, extract specific updates to apply to member records. Return ONLY valid JSON array, no markdown, no explanation.
+  const matched=[];
+  const seenIds=new Set();
 
-Member list (ID|Name|Office|Email):
-${memberList}
+  state.members.forEach(m=>{
+    if(seenIds.has(m.id))return;
+    const nameParts=m.name.toLowerCase().split(' ').filter(p=>p.length>2);
+    const fullName=m.name.toLowerCase();
+    // Match if full name or any significant name part appears in notes
+    const found=notesLower.includes(fullName)||
+      (nameParts.length>0&&nameParts.some(part=>part.length>3&&words.includes(part)));
+    if(found){
+      seenIds.add(m.id);
+      matched.push(m);
+    }
+  });
 
-For each update found, return an object with:
-- memberId: number (the ID from the list)
-- memberName: string
-- field: one of "notes", "issues", "status", "trainingType", "trainingDate", "mobileApp"
-- value: string (the new value or text to append)
-- action: "append" (add to existing) or "set" (replace)
-- reason: brief explanation of why this match was made
-
-Only include high-confidence matches. Return [] if no clear matches found.`,
-        messages:[{role:'user',content:`Notes to analyze:\n\n${notes}`}]
-      })
-    });
-    const data=await res.json();
-    const text=data.content?.[0]?.text||'[]';
-    let suggestions=[];
-    try{suggestions=JSON.parse(text.replace(/```json|```/g,'').trim());}catch(e){suggestions=[];}
-    pendingSuggestions=suggestions.map((s,i)=>({...s,idx:i,approved:true}));
-    renderSuggestions();
-  }catch(e){
-    document.getElementById('suggestions-container').innerHTML=`<div class="empty-state">Could not connect to AI. Check your internet connection.</div>`;
+  if(!matched.length){
+    document.getElementById('suggestions-container').innerHTML=
+      '<div class="empty-state">No member names recognized in your notes. Try using first and last names.</div>';
+    return;
   }
-  btn.innerHTML='Analyze &amp; match members →';btn.disabled=false;
+
+  // For each matched member, show a form to pick what to update
+  pendingSuggestions=matched.map((m,i)=>({
+    memberId:m.id,
+    memberName:m.name,
+    memberRole:m.role||'',
+    field:'notes',
+    value:'',
+    action:'append',
+    approved:true,
+    idx:i
+  }));
+
+  renderSuggestions();
 }
 function renderSuggestions(){
   const container=document.getElementById('suggestions-container');
   if(!pendingSuggestions.length){
-    container.innerHTML='<div class="empty-state">No clear member matches found in your notes. Try mentioning specific names.</div>';
+    container.innerHTML='<div class="empty-state">No member names recognized. Try using first and last names.</div>';
     return;
   }
-  container.innerHTML=`<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Found <strong>${pendingSuggestions.length}</strong> suggested update${pendingSuggestions.length!==1?'s':''}. Review each and approve or reject before applying.</p>`+
-  pendingSuggestions.map((s,i)=>`
-    <div class="suggestion-card ${s.approved?'approved':s.approved===false?'rejected':''}" id="sc-${i}">
-      <div class="suggestion-member">${s.memberName}</div>
-      <div class="suggestion-field">Field: <strong>${s.field}</strong> · Action: <strong>${s.action}</strong></div>
-      <div class="suggestion-value">${s.value}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${s.reason}</div>
-      <div class="suggestion-actions">
-        <button class="btn btn-sm btn-primary" onclick="setSuggestion(${i},true)" ${s.approved?'style="opacity:.5"':''}>✓ Approve</button>
-        <button class="btn btn-sm btn-danger" onclick="setSuggestion(${i},false)" ${s.approved===false?'style="opacity:.5"':''}>✗ Reject</button>
+  const isMlsStaff=role=>['MLS Staff'].includes(role);
+  container.innerHTML=`<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Found <strong>${pendingSuggestions.length}</strong> member${pendingSuggestions.length!==1?'s':''} in your notes. Fill in what to update for each, then click Apply.</p>`+
+  pendingSuggestions.map((s,i)=>{
+    const isStaff=isMlsStaff(s.memberRole);
+    const fieldOpts=['notes','issues','status','trainingType','trainingDate','mobileApp']
+      .filter(f=>!(isStaff&&(f==='notes'||f==='issues')))
+      .map(f=>`<option value="${f}"${s.field===f?' selected':''}>${f}</option>`).join('');
+    return`<div class="suggestion-card ${s.approved?'approved':''}" id="sc-${i}" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="suggestion-member">${s.memberName} <span style="font-size:11px;color:var(--text-muted);font-weight:400">${s.memberRole}</span></div>
+        <button class="btn btn-sm" onclick="removeSuggestion(${i})" style="color:var(--text-faint)">✕ Skip</button>
       </div>
-    </div>`).join('');
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="field"><label>Field to update</label>
+          <select onchange="updateSuggField(${i},'field',this.value)">${fieldOpts}</select>
+        </div>
+        <div class="field"><label>Action</label>
+          <select onchange="updateSuggField(${i},'action',this.value)">
+            <option value="append"${s.action==='append'?' selected':''}>Append to existing</option>
+            <option value="set"${s.action==='set'?' selected':''}>Replace entirely</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Value to save</label>
+        <textarea rows="2" style="width:100%;font-size:13px;resize:vertical" 
+          onchange="updateSuggField(${i},'value',this.value)"
+          placeholder="What to save for ${s.memberName}…">${s.value||''}</textarea>
+      </div>
+    </div>`;
+  }).join('');
   document.getElementById('apply-bar').style.display='block';
+}
+function removeSuggestion(i){
+  pendingSuggestions.splice(i,1);
+  // Re-index
+  pendingSuggestions.forEach((s,idx)=>s.idx=idx);
+  if(!pendingSuggestions.length)document.getElementById('apply-bar').style.display='none';
+  renderSuggestions();
+}
+function updateSuggField(i,key,val){
+  pendingSuggestions[i][key]=val;
 }
 function setSuggestion(i,approved){
   pendingSuggestions[i].approved=approved;
   renderSuggestions();
 }
 function applyApproved(){
-  const approved=pendingSuggestions.filter(s=>s.approved===true);
-  if(!approved.length){toast('No approved suggestions to apply');return;}
-  approved.forEach(s=>{
+  const toApply=pendingSuggestions.filter(s=>s.value&&s.value.trim());
+  if(!toApply.length){toast('No updates to apply — fill in at least one value');return;}
+  // Double-check MLS Staff rule
+  const isMlsStaff=role=>['MLS Staff'].includes(role);
+  let count=0;
+  toApply.forEach(s=>{
+    if(isMlsStaff(s.memberRole)&&(s.field==='notes'||s.field==='issues'))return;
     const m=state.members.find(x=>x.id===s.memberId);
     if(!m)return;
     if(s.action==='append'){
-      m[s.field]=(m[s.field]?m[s.field]+'\n':'')+s.value;
+      m[s.field]=(m[s.field]?m[s.field]+'\n':'')+s.value.trim();
     }else{
-      m[s.field]=s.value;
+      m[s.field]=s.value.trim();
     }
+    count++;
   });
   saveState();
-  toast(`Applied ${approved.length} update${approved.length!==1?'s':''} ✓`);
+  toast(`Applied ${count} update${count!==1?'s':''} ✓`);
   pendingSuggestions=[];
   document.getElementById('suggestions-container').innerHTML='';
   document.getElementById('smart-notes-input').value='';
