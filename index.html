@@ -869,6 +869,8 @@ function applyApproved(){
     }else{
       m[s.field]=s.value.trim();
     }
+    // Sync to Google Sheets
+    if(isConnected())apiCall({action:'updateMember',id:m.id,role:m.role,[s.field]:m[s.field]});
     count++;
   });
   saveState();
