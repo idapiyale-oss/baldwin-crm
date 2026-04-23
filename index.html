@@ -778,7 +778,16 @@ function analyzeNotes(){
       (nameParts.length>0&&nameParts.some(part=>part.length>3&&words.includes(part)));
     if(found){
       seenIds.add(m.id);
-      matched.push(m);
+      // Try to extract the sentence(s) mentioning this member
+      const sentences=notes.split(/[.!?\n]+/).map(s=>s.trim()).filter(s=>s.length>5);
+      const nameLower=m.name.toLowerCase();
+      const firstNameLower=nameParts[0]||'';
+      const relevantSentences=sentences.filter(s=>{
+        const sl=s.toLowerCase();
+        return sl.includes(nameLower)||(firstNameLower.length>3&&sl.includes(firstNameLower));
+      });
+      const extractedNote=relevantSentences.join('. ').trim();
+      matched.push({member:m, extractedNote});
     }
   });
 
@@ -788,15 +797,17 @@ function analyzeNotes(){
     return;
   }
 
-  // For each matched member, show a form to pick what to update
-  pendingSuggestions=matched.map((m,i)=>({
+  const today=new Date().toISOString().split('T')[0];
+  // For each matched member, pre-fill an interaction entry
+  pendingSuggestions=matched.map(({member:m, extractedNote},i)=>({
     memberId:m.id,
     memberName:m.name,
     memberRole:m.role||'',
-    field:'notes',
-    value:'',
-    action:'append',
-    approved:true,
+    type:'Note',
+    date:today,
+    loggedBy:'',
+    note:extractedNote,
+    skip:false,
     idx:i
   }));
 
@@ -808,43 +819,42 @@ function renderSuggestions(){
     container.innerHTML='<div class="empty-state">No member names recognized. Try using first and last names.</div>';
     return;
   }
-  const isMlsStaff=role=>['MLS Staff'].includes(role);
-  container.innerHTML=`<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Found <strong>${pendingSuggestions.length}</strong> member${pendingSuggestions.length!==1?'s':''} in your notes. Fill in what to update for each, then click Apply.</p>`+
-  pendingSuggestions.map((s,i)=>{
-    const isStaff=isMlsStaff(s.memberRole);
-    const fieldOpts=['notes','issues','status','trainingType','trainingDate','mobileApp']
-      .filter(f=>!(isStaff&&(f==='notes'||f==='issues')))
-      .map(f=>`<option value="${f}"${s.field===f?' selected':''}>${f}</option>`).join('');
-    return`<div class="suggestion-card ${s.approved?'approved':''}" id="sc-${i}" style="margin-bottom:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+  const today=new Date().toISOString().split('T')[0];
+  container.innerHTML=`<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Found <strong>${pendingSuggestions.length}</strong> member${pendingSuggestions.length!==1?'s':''} in your notes. Each will get a logged interaction — edit the details below then click Apply.</p>`+
+  pendingSuggestions.map((s,i)=>`
+    <div class="suggestion-card ${s.skip?'rejected':''}" id="sc-${i}" style="margin-bottom:12px;opacity:${s.skip?'.4':'1'}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="suggestion-member">${s.memberName} <span style="font-size:11px;color:var(--text-muted);font-weight:400">${s.memberRole}</span></div>
-        <button class="btn btn-sm" onclick="removeSuggestion(${i})" style="color:var(--text-faint)">✕ Skip</button>
+        <button class="btn btn-sm" onclick="toggleSkip(${i})" style="font-size:11px">${s.skip?'↩ Undo skip':'✕ Skip'}</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div class="field"><label>Field to update</label>
-          <select onchange="updateSuggField(${i},'field',this.value)">${fieldOpts}</select>
-        </div>
-        <div class="field"><label>Action</label>
-          <select onchange="updateSuggField(${i},'action',this.value)">
-            <option value="append"${s.action==='append'?' selected':''}>Append to existing</option>
-            <option value="set"${s.action==='set'?' selected':''}>Replace entirely</option>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <div class="field"><label>Type</label>
+          <select onchange="updateSuggField(${i},'type',this.value)">
+            <option${s.type==='Note'?' selected':''}>Note</option>
+            <option${s.type==='Call'?' selected':''}>Call</option>
+            <option${s.type==='Email'?' selected':''}>Email</option>
+            <option${s.type==='Training'?' selected':''}>Training</option>
+            <option${s.type==='Feedback'?' selected':''}>Feedback</option>
+            <option${s.type==='Issue'?' selected':''}>Issue</option>
           </select>
         </div>
+        <div class="field"><label>Date</label>
+          <input type="date" value="${s.date||today}" onchange="updateSuggField(${i},'date',this.value)">
+        </div>
+        <div class="field"><label>Logged by</label>
+          <input type="text" value="${s.loggedBy||''}" placeholder="Your name" onchange="updateSuggField(${i},'loggedBy',this.value)">
+        </div>
       </div>
-      <div class="field"><label>Value to save</label>
-        <textarea rows="2" style="width:100%;font-size:13px;resize:vertical" 
-          onchange="updateSuggField(${i},'value',this.value)"
-          placeholder="What to save for ${s.memberName}…">${s.value||''}</textarea>
+      <div class="field"><label>Note</label>
+        <textarea rows="2" style="width:100%;font-size:13px;resize:vertical"
+          onchange="updateSuggField(${i},'note',this.value)"
+          placeholder="What happened in this interaction…">${s.note||''}</textarea>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
   document.getElementById('apply-bar').style.display='block';
 }
-function removeSuggestion(i){
-  pendingSuggestions.splice(i,1);
-  // Re-index
-  pendingSuggestions.forEach((s,idx)=>s.idx=idx);
-  if(!pendingSuggestions.length)document.getElementById('apply-bar').style.display='none';
+function toggleSkip(i){
+  pendingSuggestions[i].skip=!pendingSuggestions[i].skip;
   renderSuggestions();
 }
 function updateSuggField(i,key,val){
@@ -855,26 +865,34 @@ function setSuggestion(i,approved){
   renderSuggestions();
 }
 function applyApproved(){
-  const toApply=pendingSuggestions.filter(s=>s.value&&s.value.trim());
-  if(!toApply.length){toast('No updates to apply — fill in at least one value');return;}
-  // Double-check MLS Staff rule
+  const today=new Date().toISOString().split('T')[0];
+  const toApply=pendingSuggestions.filter(s=>!s.skip);
+  if(!toApply.length){toast('Nothing to apply — all members skipped');return;}
+  const noNote=toApply.filter(s=>!(s.note||'').trim());
+  if(noNote.length){toast('Please add a note for: '+noNote.map(s=>s.memberName.split(' ')[0]).join(', '));return;}
   const isMlsStaff=role=>['MLS Staff'].includes(role);
   let count=0;
   toApply.forEach(s=>{
-    if(isMlsStaff(s.memberRole)&&(s.field==='notes'||s.field==='issues'))return;
     const m=state.members.find(x=>x.id===s.memberId);
     if(!m)return;
-    if(s.action==='append'){
-      m[s.field]=(m[s.field]?m[s.field]+'\n':'')+s.value.trim();
-    }else{
-      m[s.field]=s.value.trim();
+    const type=s.type||'Note';
+    const date=s.date||today;
+    const loggedBy=(s.loggedBy||'Perchwell').trim();
+    const note=s.note.trim();
+    if(!m.interactions)m.interactions=[];
+    m.interactions.push({type,date,loggedBy,note});
+    // If type is Issue and member is not MLS Staff, also append to issues field
+    if(type==='Issue'&&!isMlsStaff(s.memberRole)){
+      m.issues=(m.issues?m.issues+'\n':'')+`[${date}] ${note}`;
     }
     // Sync to Google Sheets
-    if(isConnected())apiCall({action:'updateMember',id:m.id,role:m.role,[s.field]:m[s.field]});
+    if(isConnected()){
+      apiCall({action:'addInteraction',memberId:m.id,memberName:m.name,type,date,loggedBy,note});
+    }
     count++;
   });
   saveState();
-  toast(`Applied ${count} update${count!==1?'s':''} ✓`);
+  toast(`Logged ${count} interaction${count!==1?'s':''} ✓`);
   pendingSuggestions=[];
   document.getElementById('suggestions-container').innerHTML='';
   document.getElementById('smart-notes-input').value='';
