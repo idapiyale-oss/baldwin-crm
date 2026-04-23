@@ -398,11 +398,11 @@ let reportData=null;
 
 // ── State ──
 function loadState(){
-  try{const s=localStorage.getItem('bald_crm_v5');if(s)return JSON.parse(s);}catch(e){}
+  try{const s=localStorage.getItem('bald_crm_v7');if(s)return JSON.parse(s);}catch(e){}
   return null;
 }
 function saveState(){
-  try{localStorage.setItem('bald_crm_v5',JSON.stringify(state));}catch(e){}
+  try{localStorage.setItem('bald_crm_v7',JSON.stringify(state));}catch(e){}
 }
 let state=loadState();
 if(!state){
@@ -539,103 +539,116 @@ function renderStats(){
 
 // ── Table ──
 
-// ── Tag input component ──
-function renderTagInput(containerId, memberId, currentTags){
+// ── Tag input component (event-delegation based, no inline escape issues) ──
+function renderTagInput(containerId, memberId){
   const wrap = document.getElementById(containerId);
   if(!wrap) return;
-  const allTags = getAllIssueTags();
-  let dropdownVisible = false;
-  let inputVal = '';
+  const m = state.members.find(x=>x.id===memberId);
+  const tags = (m&&m.reportedIssues)||[];
 
-  function refresh(){
-    const m = state.members.find(x=>x.id===memberId);
-    const tags = (m&&m.reportedIssues)||[];
-    wrap.innerHTML = tags.map(t=>`
-      <span class="tag-pill">
-        ${t}
-        <button class="remove-tag" onclick="removeIssueTag(${memberId},'${t.replace(/'/g,"\\'")}');renderTagInput('${containerId}',${memberId},[])">×</button>
-      </span>`).join('') +
-      `<input class="tag-input-inner" id="tag-inner-${memberId}" placeholder="${tags.length?'':'Add issue…'}" autocomplete="off"
-        oninput="handleTagInput(this,${memberId},'${containerId}')"
-        onkeydown="handleTagKeydown(event,${memberId},'${containerId}')"
-        onfocus="showTagDropdown(${memberId},'${containerId}')"
-        onblur="setTimeout(()=>hideTagDropdown(${memberId}),200)">`;
-  }
-  refresh();
+  wrap.innerHTML = tags.map(t=>
+    `<span class="tag-pill" data-tag="${t.replace(/"/g,'&quot;')}" data-mid="${memberId}" data-cid="${containerId}">
+      ${t}<button class="remove-tag" data-remove="1">×</button>
+    </span>`
+  ).join('') +
+  `<input class="tag-input-inner" id="tag-inner-${memberId}"
+    placeholder="${tags.length?'':'Add issue…'}" autocomplete="off">`;
+
+  const input = document.getElementById('tag-inner-'+memberId);
+  if(!input) return;
+
+  input.addEventListener('input', ()=>showTagDropdown(memberId, containerId, input.value.trim()));
+  input.addEventListener('focus', ()=>showTagDropdown(memberId, containerId, input.value.trim()));
+  input.addEventListener('blur', ()=>setTimeout(()=>hideTagDropdown(memberId), 200));
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'||e.key===','){
+      e.preventDefault();
+      const val=input.value.trim().replace(/,$/,'');
+      if(val){addIssueTag(memberId,val,containerId);}
+    } else if(e.key==='Backspace'&&!input.value){
+      const mm=state.members.find(x=>x.id===memberId);
+      if(mm&&mm.reportedIssues&&mm.reportedIssues.length){
+        removeIssueTag(memberId, mm.reportedIssues[mm.reportedIssues.length-1]);
+        renderTagInput(containerId, memberId);
+      }
+    }
+  });
+
+  wrap.addEventListener('click', e=>{
+    const btn = e.target.closest('[data-remove]');
+    if(btn){
+      const pill = btn.closest('.tag-pill');
+      if(pill){
+        removeIssueTag(memberId, pill.dataset.tag);
+        renderTagInput(containerId, memberId);
+      }
+      return;
+    }
+    input.focus();
+  });
 }
 
-function handleTagInput(input, memberId, containerId){
-  const val = input.value.trim();
-  showTagDropdown(memberId, containerId, val);
-}
-
-function showTagDropdown(memberId, containerId, filter=''){
+function showTagDropdown(memberId, containerId, filter){
   hideTagDropdown(memberId);
   const input = document.getElementById('tag-inner-'+memberId);
   if(!input) return;
   const allTags = getAllIssueTags();
   const m = state.members.find(x=>x.id===memberId);
   const existing = (m&&m.reportedIssues)||[];
-  const filtered = allTags.filter(t=>!existing.includes(t)&&t.toLowerCase().includes(filter.toLowerCase()));
-  const items = [...filtered];
-  const filterTrimmed = filter.trim();
+  const filtered = allTags.filter(t=>!existing.includes(t)&&t.toLowerCase().includes((filter||'').toLowerCase()));
+  const filterTrimmed = (filter||'').trim();
   const canCreate = filterTrimmed && !allTags.map(t=>t.toLowerCase()).includes(filterTrimmed.toLowerCase());
+
+  if(!canCreate && !filtered.length) return;
 
   const dd = document.createElement('div');
   dd.className = 'tag-dropdown';
   dd.id = 'tag-dd-'+memberId;
-  dd.style.position = 'absolute';
 
-  let ddHtml = '';
-  if(canCreate) ddHtml += `<div class="tag-dropdown-item create" onmousedown="addIssueTag(${memberId},'${filterTrimmed.replace(/'/g,"\\'")}','${containerId}')">+ Create "${filterTrimmed}"</div>`;
-  items.forEach(t=>{
-    ddHtml += `<div class="tag-dropdown-item" onmousedown="addIssueTag(${memberId},'${t.replace(/'/g,"\\'")}','${containerId}')">${t}</div>`;
+  if(canCreate){
+    const item = document.createElement('div');
+    item.className = 'tag-dropdown-item create';
+    item.textContent = '+ Create "'+filterTrimmed+'"';
+    item.addEventListener('mousedown', ()=>addIssueTag(memberId, filterTrimmed, containerId));
+    dd.appendChild(item);
+  }
+  filtered.forEach(t=>{
+    const item = document.createElement('div');
+    item.className = 'tag-dropdown-item';
+    item.textContent = t;
+    item.addEventListener('mousedown', ()=>addIssueTag(memberId, t, containerId));
+    dd.appendChild(item);
   });
-  if(!ddHtml){dd.remove();return;}
-  dd.innerHTML = ddHtml;
 
-  const rect = input.getBoundingClientRect();
   const wrap = document.getElementById(containerId);
-  const wrapRect = wrap ? wrap.getBoundingClientRect() : rect;
-  dd.style.top = (wrapRect.bottom + window.scrollY + 2) + 'px';
-  dd.style.left = (wrapRect.left + window.scrollX) + 'px';
+  const rect = wrap ? wrap.getBoundingClientRect() : input.getBoundingClientRect();
+  dd.style.position = 'fixed';
+  dd.style.top = (rect.bottom+4)+'px';
+  dd.style.left = rect.left+'px';
+  dd.style.minWidth = rect.width+'px';
   document.body.appendChild(dd);
 }
 
 function hideTagDropdown(memberId){
-  const dd = document.getElementById('tag-dd-'+memberId);
-  if(dd) dd.remove();
-}
-
-function handleTagKeydown(e, memberId, containerId){
-  if(e.key==='Enter'||e.key===','){
-    e.preventDefault();
-    const val = e.target.value.trim().replace(/,$/,'');
-    if(val) addIssueTag(memberId, val, containerId);
-  } else if(e.key==='Backspace'&&!e.target.value){
-    const m = state.members.find(x=>x.id===memberId);
-    if(m&&m.reportedIssues&&m.reportedIssues.length){
-      const last = m.reportedIssues[m.reportedIssues.length-1];
-      removeIssueTag(memberId, last);
-      renderTagInput(containerId, memberId, []);
-    }
-  }
+  const dd=document.getElementById('tag-dd-'+memberId);
+  if(dd)dd.remove();
 }
 
 function addIssueTag(memberId, tag, containerId){
-  const m = state.members.find(x=>x.id===memberId);
-  if(!m) return;
-  if(!m.reportedIssues) m.reportedIssues=[];
+  const m=state.members.find(x=>x.id===memberId);
+  if(!m)return;
+  if(!m.reportedIssues)m.reportedIssues=[];
   if(!m.reportedIssues.includes(tag)){
     m.reportedIssues.push(tag);
     saveState();
-    if(isConnected()) apiCall({action:'updateMember',id:m.id,reportedIssues:m.reportedIssues.join('||')});
+    if(isConnected())apiCall({action:'updateMember',id:m.id,reportedIssues:m.reportedIssues.join('||')});
   }
   hideTagDropdown(memberId);
-  renderTagInput(containerId, memberId, []);
-  const input = document.getElementById('tag-inner-'+memberId);
+  renderTagInput(containerId, memberId);
+  const input=document.getElementById('tag-inner-'+memberId);
   if(input){input.value='';input.focus();}
 }
+
 
 function removeIssueTag(memberId, tag){
   const m = state.members.find(x=>x.id===memberId);
@@ -765,7 +778,7 @@ function overviewTab(m){
     <button class="btn btn-primary" onclick="saveEdits(${m.id})">Save changes</button>
   </div>`;
   // Init tag input after render
-  setTimeout(()=>renderTagInput('tag-wrap-'+${m.id},${m.id},[]),50);
+  setTimeout(()=>renderTagInput('tag-wrap-'+${m.id},${m.id}),50);
 }
 function historyTab(m){
   const interactions=m.interactions||[];
@@ -783,7 +796,7 @@ function logTab(m){
     <div class="log-form-row">
       <select id="log-type"><option>Call</option><option>Email</option><option>Training</option><option>Feedback</option><option>Issue</option><option>Note</option></select>
       <input type="date" id="log-date" value="${new Date().toISOString().split('T')[0]}">
-      <input type="text" id="log-by" placeholder="Your name" style="flex:1">
+      <input type="text" id="log-by" placeholder="Your name *" style="flex:1">
     </div>
     <textarea id="log-note" style="width:100%;font-size:13px;min-height:80px;resize:vertical;margin-bottom:10px" placeholder="Describe the interaction…"></textarea>
     <button class="btn btn-primary" onclick="saveLog(${m.id})">Add interaction</button>
@@ -808,11 +821,18 @@ function saveEdits(id){
 }
 function saveLog(id){
   const m=state.members.find(x=>x.id===id);
+  const loggedBy=document.getElementById('log-by').value.trim();
+  if(!loggedBy){
+    const inp=document.getElementById('log-by');
+    inp.style.borderColor='var(--danger)';
+    inp.focus();
+    toast('Please enter your name');return;
+  }
+  document.getElementById('log-by').style.borderColor='';
   const note=document.getElementById('log-note').value.trim();
   if(!note){toast('Please enter a note');return;}
   const type=document.getElementById('log-type').value;
   const date=document.getElementById('log-date').value;
-  const loggedBy=document.getElementById('log-by').value.trim()||'MLS Staff';
   if(!m.interactions)m.interactions=[];
   m.interactions.push({type,date,loggedBy,note});
   if(type==='Issue')m.issues=(m.issues?m.issues+'\n':'')+`[${date}] ${note}`;
@@ -1002,6 +1022,8 @@ function applyApproved(){
   const today=new Date().toISOString().split('T')[0];
   const toApply=pendingSuggestions.filter(s=>!s.skip);
   if(!toApply.length){toast('Nothing to apply — all members skipped');return;}
+  const noLoggedBy=toApply.filter(s=>!(s.loggedBy||'').trim());
+  if(noLoggedBy.length){toast('Please enter your name for: '+noLoggedBy.map(s=>s.memberName.split(' ')[0]).join(', '));return;}
   const noNote=toApply.filter(s=>!(s.note||'').trim());
   if(noNote.length){toast('Please add a note for: '+noNote.map(s=>s.memberName.split(' ')[0]).join(', '));return;}
   const isMlsStaff=role=>['MLS Staff'].includes(role);
