@@ -741,6 +741,7 @@ function switchTab(t){
   });
 }
 function overviewTab(m){
+  const mid=m.id;
   return `<div class="field-row">
     <div class="field"><label>Email</label><div style="font-size:13px">${m.email||'—'}</div></div>
     <div class="field"><label>Phone</label><div style="font-size:13px">${m.phone||'—'}</div></div>
@@ -777,8 +778,8 @@ function overviewTab(m){
   <div style="display:flex;gap:8px;margin-top:12px">
     <button class="btn btn-primary" onclick="saveEdits(${m.id})">Save changes</button>
   </div>`;
-  // Init tag input after render
-  setTimeout(()=>renderTagInput('tag-wrap-'+${m.id},${m.id}),50);
+  // Init tag input after render — capture id in closure to avoid template literal outside string
+  setTimeout(()=>renderTagInput('tag-wrap-'+mid,mid),50);
 }
 function historyTab(m){
   const interactions=m.interactions||[];
