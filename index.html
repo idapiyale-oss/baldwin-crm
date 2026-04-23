@@ -540,53 +540,6 @@ function renderStats(){
 // ── Table ──
 
 // ── Tag input component (event-delegation based, no inline escape issues) ──
-function renderTagInput(containerId, memberId){
-  const wrap = document.getElementById(containerId);
-  if(!wrap) return;
-  const m = state.members.find(x=>x.id===memberId);
-  const tags = (m&&m.reportedIssues)||[];
-
-  wrap.innerHTML = tags.map(t=>
-    `<span class="tag-pill" data-tag="${t.replace(/"/g,'&quot;')}" data-mid="${memberId}" data-cid="${containerId}">
-      ${t}<button class="remove-tag" data-remove="1">×</button>
-    </span>`
-  ).join('') +
-  `<input class="tag-input-inner" id="tag-inner-${memberId}"
-    placeholder="${tags.length?'':'Add issue…'}" autocomplete="off">`;
-
-  const input = document.getElementById('tag-inner-'+memberId);
-  if(!input) return;
-
-  input.addEventListener('input', ()=>showTagDropdown(memberId, containerId, input.value.trim()));
-  input.addEventListener('focus', ()=>showTagDropdown(memberId, containerId, input.value.trim()));
-  input.addEventListener('blur', ()=>setTimeout(()=>hideTagDropdown(memberId), 200));
-  input.addEventListener('keydown', e=>{
-    if(e.key==='Enter'||e.key===','){
-      e.preventDefault();
-      const val=input.value.trim().replace(/,$/,'');
-      if(val){addIssueTag(memberId,val,containerId);}
-    } else if(e.key==='Backspace'&&!input.value){
-      const mm=state.members.find(x=>x.id===memberId);
-      if(mm&&mm.reportedIssues&&mm.reportedIssues.length){
-        removeIssueTag(memberId, mm.reportedIssues[mm.reportedIssues.length-1]);
-        renderTagInput(containerId, memberId);
-      }
-    }
-  });
-
-  wrap.addEventListener('click', e=>{
-    const btn = e.target.closest('[data-remove]');
-    if(btn){
-      const pill = btn.closest('.tag-pill');
-      if(pill){
-        removeIssueTag(memberId, pill.dataset.tag);
-        renderTagInput(containerId, memberId);
-      }
-      return;
-    }
-    input.focus();
-  });
-}
 
 function showTagDropdown(memberId, containerId, filter){
   hideTagDropdown(memberId);
@@ -642,20 +595,48 @@ function addIssueTag(memberId, tag, containerId){
     m.reportedIssues.push(tag);
     saveState();
     if(isConnected())apiCall({action:'updateMember',id:m.id,reportedIssues:m.reportedIssues.join('||')});
+    // Add pill inline without full re-render
+    const wrap=document.getElementById('tag-wrap-'+memberId);
+    const input=document.getElementById('tag-inner-'+memberId);
+    if(wrap&&input){
+      const span=document.createElement('span');
+      span.className='tag-pill';
+      span.innerHTML=`${tag} <button class="remove-tag" data-tag="${tag}">×</button>`;
+      span.querySelector('button').addEventListener('click',e=>{
+        e.stopPropagation();
+        removeIssueTag(memberId,null,e.target);
+      });
+      wrap.insertBefore(span,input);
+      input.placeholder='';
+    }
   }
   hideTagDropdown(memberId);
-  renderTagInput(containerId, memberId);
   const input=document.getElementById('tag-inner-'+memberId);
   if(input){input.value='';input.focus();}
 }
 
 
-function removeIssueTag(memberId, tag){
-  const m = state.members.find(x=>x.id===memberId);
-  if(!m||!m.reportedIssues) return;
-  m.reportedIssues = m.reportedIssues.filter(t=>t!==tag);
+function removeIssueTag(memberId, tag, btn){
+  if(btn) tag = btn.dataset.tag; // called from inline onclick
+  const m=state.members.find(x=>x.id===memberId);
+  if(!m||!m.reportedIssues)return;
+  m.reportedIssues=m.reportedIssues.filter(t=>t!==tag);
   saveState();
-  if(isConnected()) apiCall({action:'updateMember',id:m.id,reportedIssues:m.reportedIssues.join('||')});
+  if(isConnected())apiCall({action:'updateMember',id:m.id,reportedIssues:m.reportedIssues.join('||')});
+  // Re-render just the pills
+  const wrap=document.getElementById('tag-wrap-'+memberId);
+  if(wrap){
+    wrap.querySelectorAll('.tag-pill').forEach(p=>p.remove());
+    const input=document.getElementById('tag-inner-'+memberId);
+    (m.reportedIssues||[]).forEach(t=>{
+      const span=document.createElement('span');
+      span.className='tag-pill';
+      span.innerHTML=t+' <button class="remove-tag" data-tag="'+t+'">x</button>';
+      span.querySelector('button').addEventListener('click',e=>{e.stopPropagation();removeIssueTag(memberId,null,e.currentTarget);});
+      if(input) wrap.insertBefore(span,input); else wrap.appendChild(span);
+    });
+    if(input) input.placeholder=m.reportedIssues.length?'':'Add issue...';
+  }
 }
 
 function renderTable(){
@@ -771,15 +752,18 @@ function overviewTab(m){
   <div class="section-label">Issues / flags</div>
   <textarea id="edit-issues" style="width:100%;font-size:13px;min-height:60px;resize:vertical">${m.issues||''}</textarea>
   <div class="section-label">Reported issues</div>
-  <div style="position:relative">
-    <div class="tag-input-wrap" id="tag-wrap-${m.id}"></div>
+  <div id="tag-wrap-${mid}" class="tag-input-wrap" onclick="document.getElementById('tag-inner-${mid}').focus()">
+    ${(m.reportedIssues||[]).map(t=>`<span class="tag-pill">${t} <button class="remove-tag" onclick="event.stopPropagation();removeIssueTag(${mid},'${mid}',this)" data-tag="${t}">×</button></span>`).join('')}
+    <input class="tag-input-inner" id="tag-inner-${mid}" placeholder="${(m.reportedIssues||[]).length?'':'Add issue…'}" autocomplete="off"
+      oninput="showTagDropdown(${mid},'tag-wrap-${mid}',this.value)"
+      onfocus="showTagDropdown(${mid},'tag-wrap-${mid}',this.value)"
+      onblur="setTimeout(()=>hideTagDropdown(${mid}),200)"
+      onkeydown="handleTagKeydown(event,${mid},'tag-wrap-${mid}')">
   </div>
-  <p style="font-size:11px;color:var(--text-faint);margin-top:4px">Type to search or create an issue tag. Press Enter or comma to add. Used to find affected members when a bug is resolved.</p>
+  <p style="font-size:11px;color:var(--text-faint);margin-top:4px">Type to search or create an issue tag. Press Enter or comma to add.</p>
   <div style="display:flex;gap:8px;margin-top:12px">
-    <button class="btn btn-primary" onclick="saveEdits(${m.id})">Save changes</button>
-  </div>`;
-  // Init tag input after render — capture id in closure to avoid template literal outside string
-  setTimeout(()=>renderTagInput('tag-wrap-'+mid,mid),50);
+    <button class="btn btn-primary" onclick="saveEdits(${mid})">Save changes</button>
+  </div>\`;
 }
 function historyTab(m){
   const interactions=m.interactions||[];
