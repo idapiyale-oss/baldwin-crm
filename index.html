@@ -453,8 +453,18 @@ function updateConnectionStatus(){
   else{dot.className='status-dot local';lbl.textContent='Local only';}
 }
 async function apiCall(params){
-  if(!APPS_SCRIPT_URL)return null;
-  try{const r=await fetch(APPS_SCRIPT_URL+'?'+new URLSearchParams(params).toString());return await r.json();}catch(e){return null;}
+  if(!APPS_SCRIPT_URL){console.warn('apiCall: no URL set');return null;}
+  const url=APPS_SCRIPT_URL+'?'+new URLSearchParams(params).toString();
+  console.log('apiCall →',params.action, url.slice(0,80)+'...');
+  try{
+    const r=await fetch(url);
+    const data=await r.json();
+    console.log('apiCall ←',params.action, data);
+    return data;
+  }catch(e){
+    console.error('apiCall error:',params.action, e);
+    return null;
+  }
 }
 
 // ── Office filter population ──
