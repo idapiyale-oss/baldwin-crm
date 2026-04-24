@@ -183,6 +183,13 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle;overflow:hidden;text-ov
 </style>
 </head>
 <body>
+<div id="loading-screen" style="position:fixed;inset:0;background:#f7f6f3;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px">
+  <img src="data:image/png;base64,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" style="width:52px;height:52px;border-radius:8px;object-fit:cover" onerror="this.style.display='none'">
+  <div style="font-family:'DM Sans',system-ui,sans-serif;font-size:15px;color:#6b6960">Loading member directory…</div>
+  <div style="width:200px;height:3px;background:#e2e0da;border-radius:2px;overflow:hidden">
+    <div id="load-bar" style="height:100%;width:0%;background:#1c4f8c;border-radius:2px;transition:width 0.4s ease"></div>
+  </div>
+</div>
 <div class="shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
@@ -1368,8 +1375,103 @@ function disconnectAPI(){
   toast('Disconnected — reverted to default connection');
 }
 
-showView('members');
-updateConnectionStatus();
+// ── Two-way sync: load from Google Sheets on startup ──
+async function initApp(){
+  const loadBar = document.getElementById('load-bar');
+  const loadScreen = document.getElementById('loading-screen');
+
+  if(loadBar) loadBar.style.width='20%';
+
+  if(!APPS_SCRIPT_URL){
+    // No connection — load from SEED/localStorage
+    if(loadBar) loadBar.style.width='100%';
+    setTimeout(()=>{if(loadScreen)loadScreen.style.display='none';},300);
+    showView('members');
+    updateConnectionStatus();
+    return;
+  }
+
+  try{
+    if(loadBar) loadBar.style.width='40%';
+
+    // Fetch members from Google Sheets
+    const res = await fetch(APPS_SCRIPT_URL+'?action=getMembers');
+    if(loadBar) loadBar.style.width='70%';
+    const data = await res.json();
+
+    if(data && data.members && data.members.length > 0){
+      // Merge sheet data with SEED (sheet takes priority for tracked fields,
+      // SEED fills in name/email/phone/cohort for any members not yet in sheet)
+      const sheetById = {};
+      data.members.forEach(m => { if(m.id!==undefined) sheetById[String(m.id)] = m; });
+
+      state.members = SEED.map((seed, i) => {
+        const sheet = sheetById[String(seed.id !== undefined ? seed.id : i)];
+        if(!sheet) return {...seed, id: seed.id !== undefined ? seed.id : i,
+          interactions: seed.interactions || [], reportedIssues: seed.reportedIssues || [],
+          mobileApp: seed.mobileApp || '', loginCount: seed.loginCount || 0,
+          loginHistory: seed.loginHistory || []};
+        // Parse reportedIssues from pipe-delimited string
+        const reportedIssues = sheet.reportedIssues
+          ? String(sheet.reportedIssues).split('||').filter(Boolean)
+          : (seed.reportedIssues || []);
+        return {
+          ...seed,
+          id: seed.id !== undefined ? seed.id : i,
+          status: sheet.status || seed.status || 'Not contacted',
+          trainingDate: sheet.trainingDate || seed.trainingDate || '',
+          trainingType: sheet.trainingType || seed.trainingType || '',
+          mobileApp: sheet.mobileApp || seed.mobileApp || '',
+          loginCount: Number(sheet.loginCount) || seed.loginCount || 0,
+          notes: sheet.notes !== undefined ? sheet.notes : (seed.notes || ''),
+          issues: sheet.issues !== undefined ? sheet.issues : (seed.issues || ''),
+          office: sheet.office || seed.office || '',
+          reportedIssues,
+          interactions: seed.interactions || [],
+          loginHistory: seed.loginHistory || []
+        };
+      });
+
+      // Also fetch interactions from sheet
+      if(loadBar) loadBar.style.width='85%';
+      try{
+        const iRes = await fetch(APPS_SCRIPT_URL+'?action=getAllInteractions');
+        const iData = await iRes.json();
+        if(iData && iData.interactions){
+          // Group interactions by memberId
+          const byMember = {};
+          iData.interactions.forEach(i => {
+            const mid = String(i.memberId);
+            if(!byMember[mid]) byMember[mid] = [];
+            byMember[mid].push({
+              type: i.type || 'Note',
+              date: i.date || '',
+              loggedBy: i.loggedBy || '',
+              note: i.note || ''
+            });
+          });
+          state.members.forEach(m => {
+            if(byMember[String(m.id)]) m.interactions = byMember[String(m.id)];
+          });
+        }
+      }catch(e){ /* interactions fetch failed, use local */ }
+
+      saveState();
+    }
+  }catch(e){
+    // Network error — fall back to localStorage/SEED silently
+    console.warn('Could not reach Google Sheets, using local data:', e);
+  }
+
+  if(loadBar) loadBar.style.width='100%';
+  setTimeout(()=>{
+    if(loadScreen) loadScreen.style.display='none';
+    showView('members');
+    updateConnectionStatus();
+  }, 300);
+}
+
+initApp();
 
 </script>
 </body>
