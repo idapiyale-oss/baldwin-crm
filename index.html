@@ -386,7 +386,7 @@ const STATUSES=["Not contacted","In outreach","Training scheduled","Training com
 const STATUS_COLORS={"Not contacted":"#9e9c94","In outreach":"#1c4f8c","Training scheduled":"#8a5a00","Training complete":"#1a7a4a","Live":"#1a7a4a","Needs follow-up":"#8a1f1f"};
 const TRAINING_TYPES=["","In-person","Webinar","Self-guided","Office hours","1:1 session"];
 const PAGE_SIZE=25;
-let APPS_SCRIPT_URL=localStorage.getItem('crm_api_url')||'';
+let APPS_SCRIPT_URL=localStorage.getItem('crm_api_url')||localStorage.getItem('crm_api_url_bk')||'';
 
 // Persistent UI state
 let filterState={q:'',role:'',cohort:'',status:'',office:'',ttype:'',mobile:'',flag:''};
@@ -1252,23 +1252,86 @@ function renderDashboard(){
 
 // ── Settings ──
 function renderSettings(){
+  const connected = isConnected();
   document.getElementById('view-settings').innerHTML=`
-    <div class="page-header"><div><div class="page-title">Settings</div><div class="page-sub">Connect to Google Sheets for shared access</div></div></div>
+    <div class="page-header"><div>
+      <div class="page-title">Settings</div>
+      <div class="page-sub">Manage your Google Sheets connection</div>
+    </div></div>
     <div class="settings-card">
-      <div class="settings-card-title">Current mode</div>
-      <p style="font-size:14px;color:var(--text-muted);margin-bottom:1rem">${isConnected()?'✅ Connected to Google Sheets — all changes sync in real time.':'⚠️ Local only — data saved in this browser.'}</p>
-      ${isConnected()?'<button class="btn" onclick="disconnectAPI()">Disconnect</button>':''}
+      <div class="settings-card-title">Connection status</div>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:1rem">${connected
+        ? '✅ Connected to Google Sheets — all changes sync in real time.'
+        : '⚠️ Not connected. Enter the password below to connect.'}</p>
     </div>
-    <div class="settings-card">
-      <div class="settings-card-title">Connect to Google Sheets</div>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Paste your Apps Script Web App URL to enable shared sync.</p>
-      <div class="field" style="margin-bottom:10px"><label>Web App URL</label><input type="text" id="api-url-input" placeholder="https://script.google.com/macros/s/…/exec" value="${APPS_SCRIPT_URL}"></div>
-      <button class="btn btn-primary" onclick="saveAPIUrl()">Connect</button>
+    <div class="settings-card" id="settings-auth-card">
+      <div class="settings-card-title">${connected ? 'Update connection' : 'Connect to Google Sheets'}</div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Password</label>
+        <input type="password" id="settings-pw" placeholder="Enter password to unlock" style="max-width:260px">
+      </div>
+      <div id="settings-url-row" style="display:none;margin-bottom:10px">
+        <div class="field">
+          <label>Apps Script Web App URL</label>
+          <input type="text" id="api-url-input" placeholder="https://script.google.com/macros/s/…/exec" value="${APPS_SCRIPT_URL}">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="unlockSettings()">Unlock</button>
+        ${connected ? '<button class="btn" onclick="confirmDisconnect()">Disconnect</button>' : ''}
+      </div>
+      <p id="settings-error" style="font-size:13px;color:var(--danger);margin-top:8px;display:none">Incorrect password.</p>
     </div>`;
   updateConnectionStatus();
 }
-function saveAPIUrl(){const url=document.getElementById('api-url-input').value.trim();APPS_SCRIPT_URL=url;localStorage.setItem('crm_api_url',url);updateConnectionStatus();toast(url?'Connected!':'Disconnected');}
-function disconnectAPI(){APPS_SCRIPT_URL='';localStorage.removeItem('crm_api_url');renderSettings();toast('Disconnected');}
+
+function unlockSettings(){
+  const pw = document.getElementById('settings-pw').value;
+  if(pw !== 'shrimp'){
+    document.getElementById('settings-error').style.display = 'block';
+    document.getElementById('settings-pw').style.borderColor = 'var(--danger)';
+    return;
+  }
+  document.getElementById('settings-error').style.display = 'none';
+  document.getElementById('settings-pw').style.borderColor = '';
+  // Show URL field and change button to Save
+  const urlRow = document.getElementById('settings-url-row');
+  urlRow.style.display = 'block';
+  const btn = document.querySelector('#settings-auth-card .btn-primary');
+  btn.textContent = 'Save & connect';
+  btn.setAttribute('onclick','saveAPIUrl()');
+}
+
+function confirmDisconnect(){
+  const pw = document.getElementById('settings-pw').value;
+  if(pw !== 'shrimp'){
+    document.getElementById('settings-error').style.display = 'block';
+    document.getElementById('settings-pw').style.borderColor = 'var(--danger)';
+    return;
+  }
+  disconnectAPI();
+}
+
+function saveAPIUrl(){
+  const url=document.getElementById('api-url-input').value.trim();
+  if(!url){toast('Please paste your Apps Script URL');return;}
+  APPS_SCRIPT_URL=url;
+  // Save to multiple keys so it persists even if other keys are cleared
+  localStorage.setItem('crm_api_url',url);
+  localStorage.setItem('crm_api_url_bk',url); // backup key
+  updateConnectionStatus();
+  toast('Connected to Google Sheets ✓');
+  renderSettings();
+}
+
+function disconnectAPI(){
+  APPS_SCRIPT_URL='';
+  localStorage.removeItem('crm_api_url');
+  localStorage.removeItem('crm_api_url_bk');
+  updateConnectionStatus();
+  renderSettings();
+  toast('Disconnected');
+}
 
 showView('members');
 
