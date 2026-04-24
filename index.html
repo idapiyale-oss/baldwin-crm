@@ -800,7 +800,10 @@ function logTab(m){
     <div class="log-form-row">
       <select id="log-type"><option>Call</option><option>Email</option><option>Training</option><option>Feedback</option><option>Issue</option><option>Note</option></select>
       <input type="date" id="log-date" value="${new Date().toISOString().split('T')[0]}">
-      <input type="text" id="log-by" placeholder="Your name *" style="flex:1">
+      <select id="log-by" style="flex:1">
+        <option value="">— Who is logging? *  —</option>
+        <option>Wendy</option><option>Garet</option><option>David</option><option>Dusti</option><option>Meagan</option><option>Tiffany</option><option>Allison</option><option>Chandler</option><option>Jennifer</option><option>Troy</option><option>Ida</option><option>Perchwell team</option><option>Baldwin team</option>
+      </select>
     </div>
     <textarea id="log-note" style="width:100%;font-size:13px;min-height:80px;resize:vertical;margin-bottom:10px" placeholder="Describe the interaction…"></textarea>
     <button class="btn btn-primary" onclick="saveLog(${m.id})">Add interaction</button>
@@ -999,8 +1002,23 @@ function renderSuggestions(){
         <div class="field"><label>Date</label>
           <input type="date" value="${s.date||today}" onchange="updateSuggField(${i},'date',this.value)">
         </div>
-        <div class="field"><label>Logged by</label>
-          <input type="text" value="${s.loggedBy||''}" placeholder="Your name" onchange="updateSuggField(${i},'loggedBy',this.value)">
+        <div class="field"><label>Logged by *</label>
+          <select onchange="updateSuggField(${i},'loggedBy',this.value)">
+            <option value="">— Who is logging? —</option>
+            <option value="Wendy" ${s.loggedBy==='Wendy'?' selected':''}>Wendy</option>
+            <option value="Garet" ${s.loggedBy==='Garet'?' selected':''}>Garet</option>
+            <option value="David" ${s.loggedBy==='David'?' selected':''}>David</option>
+            <option value="Dusti" ${s.loggedBy==='Dusti'?' selected':''}>Dusti</option>
+            <option value="Meagan" ${s.loggedBy==='Meagan'?' selected':''}>Meagan</option>
+            <option value="Tiffany" ${s.loggedBy==='Tiffany'?' selected':''}>Tiffany</option>
+            <option value="Allison" ${s.loggedBy==='Allison'?' selected':''}>Allison</option>
+            <option value="Chandler" ${s.loggedBy==='Chandler'?' selected':''}>Chandler</option>
+            <option value="Jennifer" ${s.loggedBy==='Jennifer'?' selected':''}>Jennifer</option>
+            <option value="Troy" ${s.loggedBy==='Troy'?' selected':''}>Troy</option>
+            <option value="Ida" ${s.loggedBy==='Ida'?' selected':''}>Ida</option>
+            <option value="Perchwell team" ${s.loggedBy==='Perchwell team'?' selected':''}>Perchwell team</option>
+            <option value="Baldwin team" ${s.loggedBy==='Baldwin team'?' selected':''}>Baldwin team</option>
+          </select>
         </div>
       </div>
       <div class="field"><label>Note</label>
