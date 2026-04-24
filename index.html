@@ -410,11 +410,11 @@ let reportData=null;
 
 // ── State ──
 function loadState(){
-  try{const s=localStorage.getItem('bald_crm_v7');if(s)return JSON.parse(s);}catch(e){}
+  try{const s=localStorage.getItem('bald_crm_v9');if(s)return JSON.parse(s);}catch(e){}
   return null;
 }
 function saveState(){
-  try{localStorage.setItem('bald_crm_v7',JSON.stringify(state));}catch(e){}
+  try{localStorage.setItem('bald_crm_v9',JSON.stringify(state));}catch(e){}
 }
 let state=loadState();
 if(!state){
