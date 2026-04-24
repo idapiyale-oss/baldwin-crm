@@ -398,7 +398,8 @@ const STATUSES=["Not contacted","In outreach","Training scheduled","Training com
 const STATUS_COLORS={"Not contacted":"#9e9c94","In outreach":"#1c4f8c","Training scheduled":"#8a5a00","Training complete":"#1a7a4a","Live":"#1a7a4a","Needs follow-up":"#8a1f1f"};
 const TRAINING_TYPES=["","In-person","Webinar","Self-guided","Office hours","1:1 session"];
 const PAGE_SIZE=25;
-let APPS_SCRIPT_URL=localStorage.getItem('crm_api_url')||localStorage.getItem('crm_api_url_bk')||'';
+const DEFAULT_APPS_SCRIPT_URL='https://script.google.com/macros/s/AKfycbwmvXJrTf7SPHtn0mW9xaboZ-xPENXLwofvXf1JHEI4_PDwhWdLizm8BNTQGfQImvYU3Q/exec';
+let APPS_SCRIPT_URL=localStorage.getItem('crm_api_url')||localStorage.getItem('crm_api_url_bk')||DEFAULT_APPS_SCRIPT_URL;
 
 // Persistent UI state
 let filterState={q:'',role:'',cohort:'',status:'',office:'',ttype:'',mobile:'',flag:''};
@@ -1325,24 +1326,22 @@ function confirmDisconnect(){
 }
 
 function saveAPIUrl(){
-  const url=document.getElementById('api-url-input').value.trim();
-  if(!url){toast('Please paste your Apps Script URL');return;}
+  const url=document.getElementById('api-url-input').value.trim()||DEFAULT_APPS_SCRIPT_URL;
   APPS_SCRIPT_URL=url;
-  // Save to multiple keys so it persists even if other keys are cleared
   localStorage.setItem('crm_api_url',url);
-  localStorage.setItem('crm_api_url_bk',url); // backup key
+  localStorage.setItem('crm_api_url_bk',url);
   updateConnectionStatus();
   toast('Connected to Google Sheets ✓');
   renderSettings();
 }
 
 function disconnectAPI(){
-  APPS_SCRIPT_URL='';
+  APPS_SCRIPT_URL=DEFAULT_APPS_SCRIPT_URL;
   localStorage.removeItem('crm_api_url');
   localStorage.removeItem('crm_api_url_bk');
   updateConnectionStatus();
   renderSettings();
-  toast('Disconnected');
+  toast('Disconnected — reverted to default connection');
 }
 
 showView('members');
