@@ -929,75 +929,89 @@ function analyzeNotes(){
   document.getElementById('suggestions-container').innerHTML='';
   pendingSuggestions=[];
 
-  const notesLower=notes.toLowerCase();
-
-  // Build a normalized version of the notes with punctuation replaced by spaces
-  // so "miranda.reeves" or "miranda, reeves" still match
-  const notesNorm=' '+notesLower.replace(/[^a-z0-9]+/g,' ')+' ';
-
   const matched=[];
   const seenIds=new Set();
 
+  const paragraphs=notes.split(/\n+/).map(p=>p.trim()).filter(p=>p.length>0);
+
+  // Pre-build first-name index for single/multi match detection
+  const firstNameIndex={};
+  state.members.forEach(m=>{
+    const parts=m.name.toLowerCase().split(/\s+/).filter(p=>p.length>1);
+    const fn=parts[0];
+    if(!fn)return;
+    if(!firstNameIndex[fn])firstNameIndex[fn]=[];
+    firstNameIndex[fn].push(m);
+  });
+
+  // Helper: get relevant paragraphs for a member
+  function getRelevantParas(m, notes, paragraphs){
+    const parts=m.name.toLowerCase().split(/\s+/).filter(p=>p.length>1);
+    const fn=parts[0]; const ln=parts[parts.length-1]; const li=ln?ln[0]:'';
+    const fnE=fn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const rel=paragraphs.filter(para=>{
+      const pl=para.toLowerCase();
+      return pl.includes(fn)||pl.includes(ln)||
+        (li&&new RegExp('\\b'+fnE+'\\s+'+li+'\\b','i').test(para));
+    });
+    return rel.length>0?rel.join(' ').trim():notes.trim();
+  }
+
+  // Pass 1: full name matches + first+initial matches (highest confidence)
   state.members.forEach(m=>{
     if(seenIds.has(m.id))return;
-
-    // Split name into parts, strip middle initials (single letter parts)
-    const allParts=m.name.toLowerCase().split(/\s+/);
-    const firstName=allParts[0]||'';
-    const lastName=allParts[allParts.length-1]||'';
-
-    // Only match if BOTH first name AND last name appear together
-    // Check they appear within 4 words of each other in the notes
-    if(!firstName||!lastName||firstName===lastName)return;
-
-    // Require both first and last name to be present (skip if either too short)
-    if(firstName.length<2||lastName.length<2)return;
-
-    // Check for "firstname lastname" or "lastname firstname" as a phrase
-    // Also handle middle initial: "firstname M. lastname" -> still matches firstName + lastName
-    const fnEsc=firstName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-    const lnEsc=lastName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-
-    // Pattern: first name followed by (optional middle stuff up to 20 chars) then last name
-    const fwdPattern=new RegExp('\\b'+fnEsc+'\\s+(?:\\S+\\s+){0,2}'+lnEsc+'\\b','i');
-    // Also check reverse: last name then first name (less common but possible)
-    const revPattern=new RegExp('\\b'+lnEsc+'\\s+(?:\\S+\\s+){0,2}'+fnEsc+'\\b','i');
-
-    const found=fwdPattern.test(notes)||revPattern.test(notes);
-
-    if(found){
+    const parts=m.name.toLowerCase().split(/\s+/).filter(p=>p.length>1);
+    const fn=parts[0]; const ln=parts[parts.length-1];
+    if(!fn||!ln||fn===ln||fn.length<2||ln.length<2)return;
+    const li=ln[0];
+    const fnE=fn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const lnE=ln.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const fullPattern=new RegExp('\\b'+fnE+'\\s+(?:\\S+\\s+){0,2}'+lnE+'\\b','i');
+    const revPattern=new RegExp('\\b'+lnE+'\\s+(?:\\S+\\s+){0,2}'+fnE+'\\b','i');
+    const initialPattern=new RegExp('\\b'+fnE+'\\s+'+li+'\\b\\.?','i');
+    if(fullPattern.test(notes)||revPattern.test(notes)||initialPattern.test(notes)){
       seenIds.add(m.id);
+      matched.push({member:m, extractedNote:getRelevantParas(m,notes,paragraphs), confidence:'high'});
+    }
+  });
 
-      // Extract ALL sentences/clauses that mention this member
-      // Split on sentence boundaries AND line breaks
-      const segments=notes.split(/(?<=[.!?\n])|(?=[.!?\n])/)
-        .map(s=>s.replace(/^[.!?\n\s]+|[.!?\n\s]+$/g,''))
-        .filter(s=>s.length>3);
+  // Pass 2: first-name-only matches
+  // Extract standalone first names from notes (words that are capitalized or match a known first name)
+  // Find words in notes that match a known first name
+  const noteWords=notes.split(/[\s,\.!?;:\n]+/).filter(w=>w.length>2);
+  const checkedFirstNames=new Set();
 
-      // Find segments containing either the first or last name
-      const relevant=segments.filter(s=>{
-        const sl=s.toLowerCase();
-        return sl.includes(firstName)||sl.includes(lastName);
+  noteWords.forEach(word=>{
+    const wl=word.toLowerCase();
+    if(checkedFirstNames.has(wl))return;
+    checkedFirstNames.add(wl);
+    if(!firstNameIndex[wl])return;
+
+    const candidates=firstNameIndex[wl].filter(m=>!seenIds.has(m.id));
+    if(!candidates.length)return;
+
+    if(candidates.length===1){
+      // Only one person with this first name — auto match
+      const m=candidates[0];
+      seenIds.add(m.id);
+      matched.push({member:m, extractedNote:getRelevantParas(m,notes,paragraphs), confidence:'first-only'});
+    } else {
+      // Multiple people — show all as options so user can pick
+      candidates.forEach(m=>{
+        seenIds.add(m.id);
+        matched.push({member:m, extractedNote:getRelevantParas(m,notes,paragraphs), confidence:'ambiguous', ambiguousName:word});
       });
-
-      // Join ALL relevant segments — don't truncate
-      let extractedNote=relevant.join(' ').trim();
-
-      // If nothing extracted (shouldn't happen), use the full notes
-      if(!extractedNote) extractedNote=notes;
-
-      matched.push({member:m, extractedNote});
     }
   });
 
   if(!matched.length){
     document.getElementById('suggestions-container').innerHTML=
-      '<div class="empty-state">No full name matches found. Make sure to use both first and last name (e.g. "Fallon Young" not just "Fallon").</div>';
+      '<div class="empty-state">No name matches found. Try first + last name, first + last initial (e.g. "Judd G"), or just a first name.</div>';
     return;
   }
 
   const today=new Date().toISOString().split('T')[0];
-  pendingSuggestions=matched.map(({member:m, extractedNote},i)=>({
+  pendingSuggestions=matched.map(({member:m,extractedNote,confidence,ambiguousName},i)=>({
     memberId:m.id,
     memberName:m.name,
     memberRole:m.role||'',
@@ -1005,7 +1019,9 @@ function analyzeNotes(){
     date:today,
     loggedBy:'',
     note:extractedNote,
-    skip:false,
+    skip:confidence==='ambiguous', // ambiguous ones start skipped — user opts in
+    confidence,
+    ambiguousName:ambiguousName||null,
     idx:i
   }));
 
@@ -1022,10 +1038,13 @@ function renderSuggestions(){
   container.innerHTML=`<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Found <strong>${pendingSuggestions.length}</strong> member${pendingSuggestions.length!==1?'s':''} in your notes. Each will get a logged interaction — edit the details below then click Apply.</p>`+
   pendingSuggestions.map((s,i)=>`
     <div class="suggestion-card ${s.skip?'rejected':''}" id="sc-${i}" style="margin-bottom:12px;opacity:${s.skip?'.4':'1'}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${s.ambiguousName?'6px':'10px'}">
         <div class="suggestion-member">${s.memberName} <span style="font-size:11px;color:var(--text-muted);font-weight:400">${s.memberRole}</span></div>
-        <button class="btn btn-sm" onclick="toggleSkip(${i})" style="font-size:11px">${s.skip?'↩ Undo skip':'✕ Skip'}</button>
+        <button class="btn btn-sm" onclick="toggleSkip(${i})" style="font-size:11px">${s.skip?'↩ Include':'✕ Skip'}</button>
       </div>
+      ${s.ambiguousName?`<div style="font-size:12px;background:var(--warning-bg);color:var(--warning);padding:5px 9px;border-radius:6px;margin-bottom:8px">
+        ⚠️ Multiple members named "<strong>${s.ambiguousName}</strong>" — starts skipped. Click ↩ Include if this is the right one.
+      </div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
         <div class="field"><label>Type</label>
           <select onchange="updateSuggField(${i},'type',this.value)">
