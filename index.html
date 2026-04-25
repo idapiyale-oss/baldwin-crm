@@ -929,44 +929,74 @@ function analyzeNotes(){
   document.getElementById('suggestions-container').innerHTML='';
   pendingSuggestions=[];
 
-  // Local name matching — no API needed
-  // Split notes into words/phrases, find members whose names appear
   const notesLower=notes.toLowerCase();
-  const words=notesLower.split(/[\s,\.!?;:]+/).filter(w=>w.length>2);
+
+  // Build a normalized version of the notes with punctuation replaced by spaces
+  // so "miranda.reeves" or "miranda, reeves" still match
+  const notesNorm=' '+notesLower.replace(/[^a-z0-9]+/g,' ')+' ';
 
   const matched=[];
   const seenIds=new Set();
 
   state.members.forEach(m=>{
     if(seenIds.has(m.id))return;
-    const nameParts=m.name.toLowerCase().split(' ').filter(p=>p.length>2);
-    const fullName=m.name.toLowerCase();
-    // Match if full name or any significant name part appears in notes
-    const found=notesLower.includes(fullName)||
-      (nameParts.length>0&&nameParts.some(part=>part.length>3&&words.includes(part)));
+
+    // Split name into parts, strip middle initials (single letter parts)
+    const allParts=m.name.toLowerCase().split(/\s+/);
+    const firstName=allParts[0]||'';
+    const lastName=allParts[allParts.length-1]||'';
+
+    // Only match if BOTH first name AND last name appear together
+    // Check they appear within 4 words of each other in the notes
+    if(!firstName||!lastName||firstName===lastName)return;
+
+    // Require both first and last name to be present (skip if either too short)
+    if(firstName.length<2||lastName.length<2)return;
+
+    // Check for "firstname lastname" or "lastname firstname" as a phrase
+    // Also handle middle initial: "firstname M. lastname" -> still matches firstName + lastName
+    const fnEsc=firstName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const lnEsc=lastName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+
+    // Pattern: first name followed by (optional middle stuff up to 20 chars) then last name
+    const fwdPattern=new RegExp('\\b'+fnEsc+'\\s+(?:\\S+\\s+){0,2}'+lnEsc+'\\b','i');
+    // Also check reverse: last name then first name (less common but possible)
+    const revPattern=new RegExp('\\b'+lnEsc+'\\s+(?:\\S+\\s+){0,2}'+fnEsc+'\\b','i');
+
+    const found=fwdPattern.test(notes)||revPattern.test(notes);
+
     if(found){
       seenIds.add(m.id);
-      // Try to extract the sentence(s) mentioning this member
-      const sentences=notes.split(/[.!?\n]+/).map(s=>s.trim()).filter(s=>s.length>5);
-      const nameLower=m.name.toLowerCase();
-      const firstNameLower=nameParts[0]||'';
-      const relevantSentences=sentences.filter(s=>{
+
+      // Extract ALL sentences/clauses that mention this member
+      // Split on sentence boundaries AND line breaks
+      const segments=notes.split(/(?<=[.!?\n])|(?=[.!?\n])/)
+        .map(s=>s.replace(/^[.!?\n\s]+|[.!?\n\s]+$/g,''))
+        .filter(s=>s.length>3);
+
+      // Find segments containing either the first or last name
+      const relevant=segments.filter(s=>{
         const sl=s.toLowerCase();
-        return sl.includes(nameLower)||(firstNameLower.length>3&&sl.includes(firstNameLower));
+        return sl.includes(firstName)||sl.includes(lastName);
       });
-      const extractedNote=relevantSentences.join('. ').trim();
+
+      // Join ALL relevant segments — don't truncate
+      let extractedNote=relevant.join(' ').trim();
+
+      // If nothing extracted (shouldn't happen), use the full notes
+      if(!extractedNote) extractedNote=notes;
+
       matched.push({member:m, extractedNote});
     }
   });
 
   if(!matched.length){
     document.getElementById('suggestions-container').innerHTML=
-      '<div class="empty-state">No member names recognized in your notes. Try using first and last names.</div>';
+      '<div class="empty-state">No full name matches found. Make sure to use both first and last name (e.g. "Fallon Young" not just "Fallon").</div>';
     return;
   }
 
   const today=new Date().toISOString().split('T')[0];
-  // For each matched member, pre-fill an interaction entry
   pendingSuggestions=matched.map(({member:m, extractedNote},i)=>({
     memberId:m.id,
     memberName:m.name,
@@ -981,6 +1011,7 @@ function analyzeNotes(){
 
   renderSuggestions();
 }
+
 function renderSuggestions(){
   const container=document.getElementById('suggestions-container');
   if(!pendingSuggestions.length){
@@ -1029,12 +1060,17 @@ function renderSuggestions(){
         </div>
       </div>
       <div class="field"><label>Note</label>
-        <textarea rows="2" style="width:100%;font-size:13px;resize:vertical"
+        <textarea id="snote-${i}" rows="3" style="width:100%;font-size:13px;resize:vertical;min-height:80px"
           onchange="updateSuggField(${i},'note',this.value)"
-          placeholder="What happened in this interaction…">${s.note||''}</textarea>
+          placeholder="What happened in this interaction…"></textarea>
       </div>
     </div>`).join('');
   document.getElementById('apply-bar').style.display='block';
+  // Populate textareas after DOM render (avoids template literal escaping issues)
+  pendingSuggestions.forEach((s,i)=>{
+    const ta=document.getElementById('snote-'+i);
+    if(ta) ta.value=s.note||'';
+  });
 }
 function toggleSkip(i){
   pendingSuggestions[i].skip=!pendingSuggestions[i].skip;
