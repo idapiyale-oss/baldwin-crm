@@ -916,9 +916,9 @@ function submitNewMember(){
     loginCount:0,loginHistory:[],interactions:[]
   };
   state.members.push(m);saveState();
-  if(isConnected())apiCall({action:'updateMember',...m});
+  if(isConnected())apiCall({action:'addMember',...m});
   toast(m.name+' added');
-showView('members');
+  showView('members');
 }
 
 // ── Smart notes (AI) ──
