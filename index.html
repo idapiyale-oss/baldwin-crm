@@ -227,6 +227,10 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle;overflow:hidden;text-ov
         <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg>
         Settings
       </button>
+      <button class="nav-item" onclick="syncNow()" id="nav-sync" style="margin-top:4px">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 7.757 2.997a.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/></svg>
+        Sync now
+      </button>
     </nav>
     <div class="sidebar-bottom">
       <div class="api-status">
@@ -1443,6 +1447,95 @@ function disconnectAPI(){
 }
 
 // ── Two-way sync: load from Google Sheets on startup ──
+async function syncNow(){
+  const btn = document.getElementById('nav-sync');
+  if(btn) btn.style.opacity='0.5';
+  toast('Syncing from Google Sheets…');
+
+  if(!APPS_SCRIPT_URL){ toast('Not connected to Google Sheets'); if(btn) btn.style.opacity='1'; return; }
+
+  try{
+    // Fetch latest member data
+    const res = await fetch(APPS_SCRIPT_URL+'?action=getMembers');
+    const data = await res.json();
+
+    if(data && data.members && data.members.length > 0){
+      const sheetById = {};
+      data.members.forEach(m => { if(m.id!==undefined) sheetById[String(m.id)] = m; });
+
+      // Update existing members
+      const existingIds = new Set(state.members.map(m => String(m.id)));
+      state.members.forEach(m => {
+        const sheet = sheetById[String(m.id)];
+        if(!sheet) return;
+        const reportedIssues = sheet.reportedIssues
+          ? String(sheet.reportedIssues).split('||').filter(Boolean)
+          : (m.reportedIssues || []);
+        m.status = sheet.status || m.status;
+        m.trainingDate = sheet.trainingDate || m.trainingDate;
+        m.trainingType = sheet.trainingType || m.trainingType;
+        m.mobileApp = sheet.mobileApp || m.mobileApp;
+        m.loginCount = Number(sheet.loginCount) || m.loginCount;
+        m.notes = sheet.notes !== undefined ? sheet.notes : m.notes;
+        m.issues = sheet.issues !== undefined ? sheet.issues : m.issues;
+        m.office = sheet.office || m.office;
+        m.reportedIssues = reportedIssues;
+      });
+      // Add any members in sheet not currently in state (added directly to sheet or via UI on another device)
+      data.members.forEach(sheet => {
+        if(!sheet.id && sheet.id !== 0) return;
+        if(existingIds.has(String(sheet.id))) return;
+        const reportedIssues = sheet.reportedIssues
+          ? String(sheet.reportedIssues).split('||').filter(Boolean) : [];
+        state.members.push({
+          id: Number(sheet.id),
+          name: sheet.name || '',
+          role: sheet.role || 'Member',
+          office: sheet.office || '',
+          email: sheet.email || '',
+          phone: sheet.phone || '',
+          cohort: Number(sheet.cohort) || 0,
+          status: sheet.status || 'Not contacted',
+          trainingDate: sheet.trainingDate || '',
+          trainingType: sheet.trainingType || '',
+          mobileApp: sheet.mobileApp || '',
+          loginCount: Number(sheet.loginCount) || 0,
+          notes: sheet.notes || '',
+          issues: sheet.issues || '',
+          reportedIssues,
+          interactions: [],
+          loginHistory: []
+        });
+        existingIds.add(String(sheet.id));
+      });
+    }
+
+    // Fetch all interactions fresh
+    const iRes = await fetch(APPS_SCRIPT_URL+'?action=getAllInteractions');
+    const iData = await iRes.json();
+    if(iData && iData.interactions){
+      const byMember = {};
+      iData.interactions.forEach(i => {
+        const mid = String(i.memberId);
+        if(!byMember[mid]) byMember[mid] = [];
+        byMember[mid].push({type:i.type||'Note',date:i.date||'',loggedBy:i.loggedBy||'',note:i.note||''});
+      });
+      state.members.forEach(m => {
+        m.interactions = byMember[String(m.id)] || m.interactions || [];
+      });
+    }
+
+    saveState();
+    if(activeView==='members') renderTable();
+    if(activeView==='dashboard') renderDashboard();
+    toast('Synced ✓');
+  }catch(e){
+    toast('Sync failed — check connection');
+    console.error('syncNow error:', e);
+  }
+  if(btn) btn.style.opacity='1';
+}
+
 async function initApp(){
   const loadBar = document.getElementById('load-bar');
   const loadScreen = document.getElementById('loading-screen');
@@ -1472,13 +1565,15 @@ async function initApp(){
       const sheetById = {};
       data.members.forEach(m => { if(m.id!==undefined) sheetById[String(m.id)] = m; });
 
+      // Build merged member list from SEED + sheet
+      const seedIds = new Set(SEED.map(s => String(s.id !== undefined ? s.id : '')));
+
       state.members = SEED.map((seed, i) => {
         const sheet = sheetById[String(seed.id !== undefined ? seed.id : i)];
         if(!sheet) return {...seed, id: seed.id !== undefined ? seed.id : i,
-          interactions: seed.interactions || [], reportedIssues: seed.reportedIssues || [],
+          interactions: [], reportedIssues: seed.reportedIssues || [],
           mobileApp: seed.mobileApp || '', loginCount: seed.loginCount || 0,
-          loginHistory: seed.loginHistory || []};
-        // Parse reportedIssues from pipe-delimited string
+          loginHistory: []};
         const reportedIssues = sheet.reportedIssues
           ? String(sheet.reportedIssues).split('||').filter(Boolean)
           : (seed.reportedIssues || []);
@@ -1494,9 +1589,36 @@ async function initApp(){
           issues: sheet.issues !== undefined ? sheet.issues : (seed.issues || ''),
           office: sheet.office || seed.office || '',
           reportedIssues,
-          interactions: seed.interactions || [],
-          loginHistory: seed.loginHistory || []
+          interactions: [],
+          loginHistory: []
         };
+      });
+
+      // Add any members that exist in the sheet but NOT in SEED (added directly or via UI)
+      data.members.forEach(sheet => {
+        if(!sheet.id && sheet.id !== 0) return;
+        if(seedIds.has(String(sheet.id))) return; // already in SEED
+        const reportedIssues = sheet.reportedIssues
+          ? String(sheet.reportedIssues).split('||').filter(Boolean) : [];
+        state.members.push({
+          id: Number(sheet.id),
+          name: sheet.name || '',
+          role: sheet.role || 'Member',
+          office: sheet.office || '',
+          email: sheet.email || '',
+          phone: sheet.phone || '',
+          cohort: Number(sheet.cohort) || 0,
+          status: sheet.status || 'Not contacted',
+          trainingDate: sheet.trainingDate || '',
+          trainingType: sheet.trainingType || '',
+          mobileApp: sheet.mobileApp || '',
+          loginCount: Number(sheet.loginCount) || 0,
+          notes: sheet.notes || '',
+          issues: sheet.issues || '',
+          reportedIssues,
+          interactions: [],
+          loginHistory: []
+        });
       });
 
       // Also fetch interactions from sheet
@@ -1523,10 +1645,15 @@ async function initApp(){
         }
       }catch(e){ /* interactions fetch failed, use local */ }
 
+      // Save member data (status, notes etc) to localStorage but NOT interactions
+      // Interactions always come from the sheet fresh to stay in sync
+      const interactionBackup = {};
+      state.members.forEach(m => { interactionBackup[m.id] = m.interactions; });
+      state.members.forEach(m => { m.interactions = []; });
       saveState();
+      state.members.forEach(m => { m.interactions = interactionBackup[m.id] || []; });
     }
   }catch(e){
-    // Network error — fall back to localStorage/SEED silently
     console.warn('Could not reach Google Sheets, using local data:', e);
   }
 
