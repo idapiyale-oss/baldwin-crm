@@ -916,7 +916,26 @@ function submitNewMember(){
     loginCount:0,loginHistory:[],interactions:[]
   };
   state.members.push(m);saveState();
-  if(isConnected())apiCall({action:'addMember',...m});
+  if(isConnected()){
+    apiCall({
+      action:'addMember',
+      id:m.id,
+      name:m.name,
+      role:m.role,
+      office:m.office,
+      email:m.email,
+      phone:m.phone,
+      cohort:m.cohort,
+      status:m.status,
+      trainingDate:m.trainingDate,
+      trainingType:m.trainingType,
+      mobileApp:m.mobileApp,
+      loginCount:m.loginCount||0,
+      notes:m.notes||'',
+      issues:m.issues||'',
+      reportedIssues:''
+    }).then(r=>console.log('addMember result:',r));
+  }
   toast(m.name+' added');
   showView('members');
 }
