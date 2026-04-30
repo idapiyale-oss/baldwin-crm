@@ -1472,7 +1472,7 @@ async function syncNow(){
           ? String(sheet.reportedIssues).split('||').filter(Boolean)
           : (m.reportedIssues || []);
         m.status = sheet.status || m.status;
-        m.trainingDate = sheet.trainingDate !== undefined && sheet.trainingDate !== '' ? sheet.trainingDate : m.trainingDate;
+        m.trainingDate = sheet.trainingDate ? (sheet.trainingDate instanceof Date ? sheet.trainingDate.toISOString().split('T')[0] : String(sheet.trainingDate)) : m.trainingDate;
         m.trainingType = sheet.trainingType !== undefined && sheet.trainingType !== '' ? sheet.trainingType : m.trainingType;
         m.mobileApp = sheet.mobileApp !== undefined && sheet.mobileApp !== '' ? sheet.mobileApp : m.mobileApp;
         m.loginCount = Number(sheet.loginCount) || m.loginCount;
@@ -1581,7 +1581,7 @@ async function initApp(){
           ...seed,
           id: seed.id !== undefined ? seed.id : i,
           status: sheet.status || seed.status || 'Not contacted',
-          trainingDate: sheet.trainingDate !== undefined && sheet.trainingDate !== '' ? sheet.trainingDate : (seed.trainingDate || ''),
+          trainingDate: sheet.trainingDate ? (sheet.trainingDate instanceof Date ? sheet.trainingDate.toISOString().split('T')[0] : String(sheet.trainingDate)) : (seed.trainingDate || ''),
           trainingType: sheet.trainingType !== undefined && sheet.trainingType !== '' ? sheet.trainingType : (seed.trainingType || ''),
           mobileApp: sheet.mobileApp !== undefined && sheet.mobileApp !== '' ? sheet.mobileApp : (seed.mobileApp || ''),
           loginCount: Number(sheet.loginCount) || seed.loginCount || 0,
