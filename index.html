@@ -214,6 +214,10 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle;overflow:hidden;text-ov
         <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/><path d="M3 5.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zM3 8a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9A.5.5 0 0 1 3 8zm0 2.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1-.5-.5z"/></svg>
         Smart notes
       </button>
+      <button class="nav-item" onclick="showView('tsvimport')" id="nav-tsvimport">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/></svg>
+        Bulk import
+      </button>
       <button class="nav-item" onclick="showView('reports')" id="nav-reports">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M4 11H2v3h2v-3zm5-4H7v7h2V7zm5-5h-2v12h2V2zm-2-1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1h-2zM6 7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm-5 4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3z"/></svg>
         Login reports
@@ -353,6 +357,35 @@ td{padding:9px 12px;font-size:13px;vertical-align:middle;overflow:hidden;text-ov
         <div id="apply-bar" style="display:none;padding-top:1rem;border-top:1px solid var(--border);margin-top:.5rem">
           <p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Review suggestions above. Approved changes will be applied when you click below.</p>
           <button class="btn btn-primary" onclick="applyApproved()">Apply approved changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TSV Bulk Import -->
+    <div id="view-tsvimport" style="display:none">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Bulk import interactions</div>
+          <div class="page-sub">Paste a tab-separated table of interactions (memberId · memberName · type · date · loggedBy · note)</div>
+        </div>
+      </div>
+      <div style="max-width:760px">
+        <div class="dash-card" style="margin-bottom:1rem">
+          <div class="dash-card-title">Paste TSV data</div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">Paste rows with columns: <strong>memberId · memberName · type · date · loggedBy · note</strong>. Include or skip the header row — it will be detected automatically.</p>
+          <textarea id="tsv-input" style="width:100%;font-size:12px;font-family:var(--mono);min-height:200px;resize:vertical" placeholder="memberId&#9;memberName&#9;type&#9;date&#9;loggedBy&#9;note&#10;586&#9;Nancy Fornarotto&#9;Note&#9;2026-04-25&#9;Troy&#9;Nancy called about..."></textarea>
+          <div style="display:flex;gap:8px;margin-top:.75rem">
+            <button class="btn btn-primary" onclick="parseTSV()">Preview import →</button>
+            <button class="btn" onclick="document.getElementById('tsv-input').value='';document.getElementById('tsv-preview').style.display='none'">Clear</button>
+          </div>
+        </div>
+        <div id="tsv-preview" style="display:none" class="dash-card">
+          <div class="dash-card-title">Import preview</div>
+          <div id="tsv-preview-content"></div>
+          <div style="display:flex;gap:8px;margin-top:1rem">
+            <button class="btn btn-primary" onclick="applyTSV()">Import all ✓</button>
+            <button class="btn" onclick="document.getElementById('tsv-preview').style.display='none'">Cancel</button>
+          </div>
         </div>
       </div>
     </div>
@@ -538,7 +571,7 @@ function setSort(col){
 // ── Views ──
 function showView(v){
   activeView=v;
-  ['members','add','smartnotes','reports','dashboard','settings'].forEach(id=>{
+  ['members','add','smartnotes','tsvimport','reports','dashboard','settings'].forEach(id=>{
     const el=document.getElementById('view-'+id);
     if(el)el.style.display=id===v?'block':'none';
     const nav=document.getElementById('nav-'+id);
@@ -837,7 +870,7 @@ function saveEdits(id){
   apiCall({action:'updateMember',id,notes:m.notes,issues:m.issues,office:m.office,mobileApp:m.mobileApp,loginCount:m.loginCount,trainingType:m.trainingType,trainingDate:m.trainingDate}).catch(e=>toast('❌ Sheets save failed: '+e.message,4000));
   toast('Saved');populateOfficeFilter();
 }
-function saveLog(id){
+async function saveLog(id){
   const m=state.members.find(x=>x.id===id);
   const loggedBy=document.getElementById('log-by').value.trim();
   if(!loggedBy){
@@ -852,11 +885,20 @@ function saveLog(id){
   const type=document.getElementById('log-type').value;
   const date=document.getElementById('log-date').value;
   if(!m.interactions)m.interactions=[];
-  m.interactions.push({type,date,loggedBy,note});
+  const entry={type,date,loggedBy,note};
+  m.interactions.push(entry);
   if(type==='Issue')m.issues=(m.issues?m.issues+'\n':'')+`[${date}] ${note}`;
-  saveState();
-  apiCall({action:'addInteraction',memberId:id,memberName:m.name,type,date,loggedBy,note}).catch(e=>toast('❌ Sheets save failed: '+e.message,4000));
-  toast('Logged');closeModal();openMember(id);switchTab('hist');
+  try{
+    await apiCall({action:'addInteraction',memberId:id,memberName:m.name,type,date,loggedBy,note});
+    toast('Logged ✓');
+  }catch(e){
+    // Rollback: remove the interaction we just pushed
+    m.interactions.pop();
+    if(type==='Issue')m.issues=m.issues.replace('\n'+`[${date}] ${note}`,'').replace(`[${date}] ${note}`,'');
+    toast('❌ Could not save to Google Sheets: '+e.message,6000);
+    return;
+  }
+  closeModal();openMember(id);switchTab('hist');
 }
 
 // ── Add member ──
@@ -1147,7 +1189,8 @@ function applyApproved(){
     }
     // Sync to Google Sheets
     if(isConnected()){
-      apiCall({action:'addInteraction',memberId:m.id,memberName:m.name,type,date,loggedBy,note});
+      apiCall({action:'addInteraction',memberId:m.id,memberName:m.name,type,date,loggedBy,note})
+        .catch(e=>toast('⚠️ Sheets save failed for '+m.name+': '+e.message,5000));
     }
     count++;
   });
@@ -1665,6 +1708,94 @@ async function initApp(){
     showView('members');
     updateConnectionStatus();
   }, 300);
+}
+
+// ── Bulk TSV import ──
+let tsvParsed = [];
+
+function parseTSV(){
+  const raw = document.getElementById('tsv-input').value.trim();
+  if(!raw){toast('Please paste some data first');return;}
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length){toast('No data found');return;}
+
+  // Detect and skip header row
+  const firstCols = lines[0].split('\t').map(c=>c.trim().toLowerCase());
+  const isHeader = firstCols.some(c=>['memberid','member id','id','name','membername','type','date'].includes(c));
+  const dataLines = isHeader ? lines.slice(1) : lines;
+
+  tsvParsed = [];
+  const errors = [];
+
+  dataLines.forEach((line,i)=>{
+    const cols = line.split('\t').map(c=>c.trim());
+    if(cols.length < 5){errors.push(`Row ${i+1}: not enough columns`);return;}
+    const [memberId,,type,date,loggedBy,...noteParts] = cols;
+    const note = noteParts.join('\t');
+    const mid = parseInt(memberId);
+    if(isNaN(mid)){errors.push(`Row ${i+1}: invalid memberId "${memberId}"`);return;}
+    const m = state.members.find(x=>x.id===mid);
+    tsvParsed.push({memberId:mid,memberName:m?m.name:cols[1]||'Unknown',found:!!m,type:type||'Note',date:date||'',loggedBy:loggedBy||'',note:note||''});
+  });
+
+  const preview = document.getElementById('tsv-preview');
+  const content = document.getElementById('tsv-preview-content');
+  const notFound = tsvParsed.filter(r=>!r.found);
+
+  content.innerHTML = `<p style="font-size:13px;color:var(--text-muted);margin-bottom:.75rem">
+    Found <strong>${tsvParsed.length}</strong> row${tsvParsed.length!==1?'s':''}.
+    ${notFound.length?`<span style="color:var(--warning)"> ⚠️ ${notFound.length} member ID(s) not found — those rows will be skipped.</span>`:''}
+    ${errors.length?`<span style="color:var(--danger)"> ❌ ${errors.length} parse error(s).</span>`:''}
+  </p>`+
+  (errors.length?`<div style="font-size:12px;color:var(--danger);margin-bottom:.75rem">${errors.join('<br>')}</div>`:'')+
+  `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="text-align:left;padding:4px 8px;font-weight:500;color:var(--text-muted)">Member</th>
+      <th style="text-align:left;padding:4px 8px;font-weight:500;color:var(--text-muted)">Type</th>
+      <th style="text-align:left;padding:4px 8px;font-weight:500;color:var(--text-muted)">Date</th>
+      <th style="text-align:left;padding:4px 8px;font-weight:500;color:var(--text-muted)">By</th>
+      <th style="text-align:left;padding:4px 8px;font-weight:500;color:var(--text-muted)">Note</th>
+    </tr></thead>
+    <tbody>${tsvParsed.map(r=>`<tr style="border-bottom:1px solid var(--border);opacity:${r.found?'1':'.4'}">
+      <td style="padding:5px 8px">${r.memberName}${!r.found?' <span style="color:var(--danger);font-size:10px">not found</span>':''}</td>
+      <td style="padding:5px 8px">${r.type}</td>
+      <td style="padding:5px 8px">${r.date}</td>
+      <td style="padding:5px 8px">${r.loggedBy}</td>
+      <td style="padding:5px 8px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.note.replace(/"/g,'&quot;')}">${r.note}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+
+  preview.style.display = 'block';
+}
+
+async function applyTSV(){
+  const toImport = tsvParsed.filter(r=>r.found);
+  if(!toImport.length){toast('No valid rows to import');return;}
+  if(!isConnected()){toast('❌ Not connected to Google Sheets — cannot import.');return;}
+
+  let done=0, failed=0;
+  toast(`Importing ${toImport.length} interactions…`, 8000);
+
+  for(const r of toImport){
+    const m = state.members.find(x=>x.id===r.memberId);
+    if(!m) continue;
+    if(!m.interactions) m.interactions=[];
+    const entry = {type:r.type,date:r.date,loggedBy:r.loggedBy,note:r.note};
+    m.interactions.push(entry);
+    try{
+      await apiCall({action:'addInteraction',memberId:r.memberId,memberName:r.memberName,type:r.type,date:r.date,loggedBy:r.loggedBy,note:r.note});
+      done++;
+    }catch(e){
+      m.interactions.pop();
+      failed++;
+      console.error('TSV import row failed:',r,e);
+    }
+  }
+
+  toast(`✅ Imported ${done} interaction${done!==1?'s':''}${failed?' — ⚠️ '+failed+' failed':''}`);
+  tsvParsed=[];
+  document.getElementById('tsv-input').value='';
+  document.getElementById('tsv-preview').style.display='none';
 }
 
 initApp();
